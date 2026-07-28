@@ -231,7 +231,10 @@ public partial class FileDialog : Dialog<IReadOnlyList<string>?>, IDesignable
         // by default, Runnable doesn't bind to Command.Context, so
         // we can take advantage of the CommandNotBound event to handle it
         _tableView.CommandNotBound += TableViewHandleCommandNotBound;
-        _tableView.KeyBindings.Add (PopoverMenu.DefaultKey, Command.Context);
+
+        // ReplaceCommands, not Add: PopoverMenu.DefaultKey is configurable and may collide with a key
+        // TableView already binds (e.g. Ctrl+P -> Command.Up); the user's context-menu key wins.
+        _tableView.KeyBindings.ReplaceCommands (PopoverMenu.DefaultKey, Command.Context);
         _tableView.MouseBindings.Add (MouseFlags.RightButtonClicked, Command.Context);
 
         _tbPath.TextChanged += (_, _) => PathChanged ();
@@ -370,7 +373,11 @@ public partial class FileDialog : Dialog<IReadOnlyList<string>?>, IDesignable
     /// <summary>The maximum number of results that will be collected when searching before stopping.</summary>
     /// <remarks>This prevents performance issues e.g. when searching root of file system for a common letter (e.g. 'e').</remarks>
     [ConfigurationProperty (Scope = typeof (SettingsScope))]
-    public static int MaxSearchResults { get; set; } = 10000;
+    public static int MaxSearchResults
+    {
+        get => FileDialogSettings.Defaults.MaxSearchResults;
+        set => FileDialogSettings.Defaults.MaxSearchResults = value;
+    }
 
     /// <summary>
     ///     Gets all files/directories selected or an empty collection <see cref="AllowsMultipleSelection"/> is

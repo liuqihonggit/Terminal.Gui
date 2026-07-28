@@ -55,7 +55,11 @@ public class CharMap : View, IDesignable, IValue<Rune>
     ///     Gets or sets the default cursor style.
     /// </summary>
     [ConfigurationProperty (Scope = typeof (ThemeScope))]
-    public static CursorStyle DefaultCursorStyle { get; set; } = CursorStyle.BlinkingBlock;
+    public static CursorStyle DefaultCursorStyle
+    {
+        get => CharMapSettings.Defaults.DefaultCursorStyle;
+        set => CharMapSettings.Defaults.DefaultCursorStyle = value;
+    }
 
     private const int COLUMN_WIDTH = 3; // Width of each column of glyphs
     private const int HEADER_HEIGHT = 1; // Height of the header
@@ -99,7 +103,9 @@ public class CharMap : View, IDesignable, IValue<Rune>
         KeyBindings.Add (Key.PageDown, Command.PageDown);
         KeyBindings.Add (Key.Home, Command.Start);
         KeyBindings.Add (Key.End, Command.End);
-        KeyBindings.Add (PopoverMenu.DefaultKey, Command.Context);
+        // ReplaceCommands, not Add: PopoverMenu.DefaultKey is configurable and may collide with a key
+        // that is already bound (e.g. Ctrl+P); the user's context-menu key wins.
+        KeyBindings.ReplaceCommands (PopoverMenu.DefaultKey, Command.Context);
 
         MouseBindings.ReplaceCommands (MouseFlags.LeftButtonClicked, Command.Activate);
         MouseBindings.Add (MouseFlags.LeftButtonDoubleClicked, Command.Accept);

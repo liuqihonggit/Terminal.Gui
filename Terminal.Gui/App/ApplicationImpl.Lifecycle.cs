@@ -2,6 +2,8 @@ using System.Diagnostics;
 using Wcwidth;
 using Trace = Terminal.Gui.Tracing.Trace;
 
+#pragma warning disable CS0618 // Obsolete - ConfigurationManager still used internally during transition
+
 namespace Terminal.Gui.App;
 
 internal partial class ApplicationImpl
@@ -11,6 +13,8 @@ internal partial class ApplicationImpl
 
     /// <inheritdoc/>
     public bool Initialized { get; set; }
+
+    internal SynchronizationContext? SynchronizationContext { get; private set; }
 
     /// <inheritdoc/>
     public event EventHandler<EventArgs<bool>>? InitializedChanged;
@@ -77,7 +81,8 @@ internal partial class ApplicationImpl
         RaiseInitializedChanged (this, new EventArgs<bool> (true));
         SubscribeDriverEvents ();
 
-        SynchronizationContext.SetSynchronizationContext (new SynchronizationContext ());
+        SynchronizationContext = new MainLoopSyncContext (this);
+        SynchronizationContext.SetSynchronizationContext (SynchronizationContext);
 
         _result = null;
 
