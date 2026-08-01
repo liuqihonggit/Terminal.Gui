@@ -229,6 +229,7 @@ public class TableViewTests : TestDriverBase
         Assert.Equal (5, tableView.Value!.SelectedCell.Y);
     }
 
+    // Copilot
     [Fact]
     public void TableView_ContentSize_UsesWideCellContent_WhenContentExceedsViewport ()
     {
