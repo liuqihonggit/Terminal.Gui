@@ -888,9 +888,8 @@ public class TableViewTests : TestDriverBase
     }
 
     // Copilot
-    // Verifies fix for #5072: a column with very wide content must not consume all viewport space
-    // and push later columns off-screen. Each subsequent visible column should be reserved at least
-    // its header width.
+    // Verifies fix for #5072: a wide column should be allowed to grow based on its content so that
+    // the table can establish horizontal overflow and keep later columns reachable via scrolling.
     [Fact]
     public void Calculate_WideColumn_DoesNotStarveLaterColumns ()
     {
@@ -913,7 +912,7 @@ public class TableViewTests : TestDriverBase
 
         Assert.Equal (3, columns.Length);
 
-        // Description must be clamped so that Status and Owner fit
+        // The wide column should be allowed to extend beyond the viewport so the table can scroll horizontally.
         TableView.ColumnToRender description = columns [0];
         TableView.ColumnToRender status = columns [1];
         TableView.ColumnToRender owner = columns [2];
@@ -921,14 +920,8 @@ public class TableViewTests : TestDriverBase
         Assert.True (description.X >= 0);
         Assert.True (status.X > description.X);
         Assert.True (owner.X > status.X);
-
-        // Every column's right edge must lie within the viewport
-        Assert.True (description.X + description.Width - 1 < tableView.Viewport.Width,
-                     $"Description right edge {description.X + description.Width - 1} exceeds viewport {tableView.Viewport.Width}");
-        Assert.True (status.X + status.Width - 1 < tableView.Viewport.Width,
-                     $"Status right edge {status.X + status.Width - 1} exceeds viewport {tableView.Viewport.Width}");
-        Assert.True (owner.X + owner.Width - 1 < tableView.Viewport.Width,
-                     $"Owner right edge {owner.X + owner.Width - 1} exceeds viewport {tableView.Viewport.Width}");
+        Assert.True (description.X + description.Width - 1 >= tableView.Viewport.Width,
+                     $"Description right edge {description.X + description.Width - 1} should exceed viewport {tableView.Viewport.Width}");
 
         // Status and Owner each must have at least header-width room (excluding separator)
         Assert.True (status.Width - 1 >= "Status".Length, $"Status got width {status.Width - 1}");
