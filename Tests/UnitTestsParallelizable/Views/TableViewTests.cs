@@ -230,6 +230,31 @@ public class TableViewTests : TestDriverBase
     }
 
     [Fact]
+    public void TableView_ContentSize_UsesWideCellContent_WhenContentExceedsViewport ()
+    {
+        DataTable dt = new ();
+        dt.Columns.Add ("A");
+        dt.Columns.Add ("Description");
+        dt.Columns.Add ("C");
+        dt.Rows.Add ("x", new string ('d', 120), "y");
+
+        TableView tableView = new ()
+        {
+            Frame = new Rectangle (0, 0, 20, 5),
+            ViewportSettings = ViewportSettingsFlags.HasHorizontalScrollBar,
+            Table = new DataTableSource (dt)
+        };
+
+        tableView.BeginInit ();
+        tableView.EndInit ();
+
+        Size contentSize = tableView.GetContentSize ();
+
+        Assert.True (contentSize.Width > tableView.Viewport.Width);
+        Assert.True (tableView.HorizontalScrollBar.Visible);
+    }
+
+    [Fact]
     public void TableView_CollectionNavigatorMatcher_HotKey_Finds_Item ()
     {
         var dt = new DataTable ();
