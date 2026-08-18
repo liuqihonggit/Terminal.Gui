@@ -185,38 +185,5 @@
         <Exec Command="rm -rf ~/.nuget/packages/terminal.gui/2.0.0" Condition=" '$(OS)' != 'Windows_NT' " />
     </Target>-->
         
-    <Target Name="CopyNuGetPackagesToLocalPackagesFolder" AfterTargets="Pack" Condition="'$(Configuration)' == 'Release'">
-	    <!-- Remove older NuGet Package from Global Cache -->
-	    <Exec Command="rmdir /s /q &quot;$(UserProfile)\.nuget\packages\terminal.gui\2.0.0&quot;" Condition=" '$(OS)' == 'Windows_NT' " />
-	    <Exec Command="rm -rf ~/.nuget/packages/terminal.gui/2.0.0" Condition=" '$(OS)' != 'Windows_NT' " />
-
-        <PropertyGroup>
-            <!-- Define the path for local_packages relative to the project directory -->
-            <LocalPackagesPath>$(MSBuildThisFileDirectory)..\local_packages\</LocalPackagesPath>
-            <!-- Output path without framework-specific folders -->
-            <PackageOutputPath>$(MSBuildThisFileDirectory)bin\$(Configuration)\</PackageOutputPath>
-        </PropertyGroup>
-
-        <!-- Ensure the local_packages folder exists -->
-        <Message Text="Checking if $(LocalPackagesPath) exists, creating if necessary." Importance="high" />
-        <MakeDir Directories="$(LocalPackagesPath)" />
-
-        <!-- Collect .nupkg and .snupkg files into an item group -->
-        <ItemGroup>
-            <NuGetPackages Include="$(PackageOutputPath)*.nupkg;$(PackageOutputPath)*.snupkg" />
-        </ItemGroup>
-
-        <!-- Check if any packages were found -->
-        <Message Text="Found packages: @(NuGetPackages)" Importance="high" />
-
-        <!-- Copy files only if found -->
-        <Copy SourceFiles="@(NuGetPackages)" DestinationFolder="$(LocalPackagesPath)" SkipUnchangedFiles="false" Condition="@(NuGetPackages) != ''" />
-
-        <!-- Log success -->
-        <Message Text="Copy completed successfully." Importance="high" />
-
-        <!-- Install NuGet Package to Global Cache -->
-        <Exec Command="dotnet nuget push &quot;$(MSBuildThisFileDirectory)bin\$(Configuration)\Terminal.Gui.$(Version).nupkg&quot; --source &quot;$(UserProfile)\.nuget\packages&quot; --skip-duplicate" Condition=" '$(OS)' == 'Windows_NT' " />
-        <Exec Command="dotnet nuget push &quot;$(MSBuildThisFileDirectory)bin\$(Configuration)/Terminal.Gui.$(Version).nupkg&quot; --source ~/.nuget/packages --skip-duplicate" Condition=" '$(OS)' != 'Windows_NT' " />
-    </Target>
+    <!-- CopyNuGetPackagesToLocalPackagesFolder target removed — submodule 模式不需要 push nupkg 到本地源 -->
 </Project>
