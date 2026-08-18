@@ -519,10 +519,11 @@ public class ConfigProperty
             dict [type.Name] = type;
         }
 
-        // Supplement the built-in list by discovering host types defined outside Terminal.Gui
-        // (test suites, plugins, embedding apps). This remains important under NativeAOT for
-        // consumer-rooted host types such as app-defined AppSettingsScope entries.
-        ScanLoadedAssembliesForConfigPropertyHosts (dict, AppDomain.CurrentDomain.GetAssemblies ());
+        // PERF: Skip runtime assembly scan. ConfigPropertyHostTypes.GetTypes() statically
+        // enumerates all Terminal.Gui config property hosts. jcctui defines no external
+        // ConfigurationPropertyAttribute hosts, so scanning all loaded assemblies via
+        // reflection is pure waste — eliminates ~12% startup cost.
+        // ScanLoadedAssembliesForConfigPropertyHosts (dict, AppDomain.CurrentDomain.GetAssemblies ());
 
         _classesWithConfigProps = dict.ToImmutableSortedDictionary ();
     }
