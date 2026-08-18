@@ -81,9 +81,7 @@
     <ItemGroup>
       <!-- Enable Nuget Source Link for github -->
       <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
-      <!-- GitVersion.MsBuild automatically sets Version, AssemblyVersion, FileVersion, -->
-      <!-- and InformationalVersion from git history + GitVersion.yml at build time. -->
-      <PackageReference Include="GitVersion.MsBuild" PrivateAssets="all" />
+      <!-- GitVersion.MsBuild removed — submodule 环境用固定版本 2.4.0，不需要从 git 历史计算 -->
     </ItemGroup>
     <!-- =================================================================== -->
     <!-- Global Usings and Type Aliases -->
