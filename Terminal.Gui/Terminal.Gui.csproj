@@ -10,7 +10,7 @@
     <PropertyGroup>
         <AssemblyName>Terminal.Gui</AssemblyName>
         <!-- 跳过 GitVersion.MsBuild — submodule 环境下 git 历史不完整，强制固定版本 -->
-        <GitVersionSkip>true</GitVersionSkip>
+        <DisableGitVersionTask>true</DisableGitVersionTask>
         <Version>2.4.0</Version>
         <AssemblyVersion>2.4.0.0</AssemblyVersion>
         <FileVersion>2.4.0.0</FileVersion>
