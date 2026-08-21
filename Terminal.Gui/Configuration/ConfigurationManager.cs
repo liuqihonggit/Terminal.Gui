@@ -368,20 +368,25 @@ public static class ConfigurationManager
         // Ensure ConfigProperty has cached the list of all the classes with config properties.
         ConfigProperty.Initialize ();
 
+        // PERF: Call GetAllConfigProperties once (reflection over 28 known types), then use
+        // ConfigProperty.CreateCopy to produce an independent set for _hardCodedConfigPropertyCache.
+        // Eliminates a duplicate reflection pass — halves config init reflection cost.
+        ImmutableSortedDictionary<string, ConfigProperty> allConfigProperties = ConfigProperty.GetAllConfigProperties ();
+
         // Cache all configuration properties
         lock (_uninitializedConfigPropertiesCacheCacheLock)
         {
             // _allConfigProperties: for ordered, iterable access (LINQ-friendly)
-            // _hardCodedConfigPropertyCache: for high-speed key lookup (frozen)
-
             // Note GetAllConfigProperties returns a new instance and all the properties !HasValue and Immutable.
-            _uninitializedConfigPropertiesCache = ConfigProperty.GetAllConfigProperties ();
+            _uninitializedConfigPropertiesCache = allConfigProperties;
         }
 
         // Create a COPY of the _allConfigPropertiesCache to ensure that the original is not modified.
         lock (_hardCodedConfigPropertyCacheLock)
         {
-            _hardCodedConfigPropertyCache = ConfigProperty.GetAllConfigProperties ().ToFrozenDictionary ();
+            _hardCodedConfigPropertyCache = allConfigProperties
+                .ToDictionary (kvp => kvp.Key, kvp => ConfigProperty.CreateCopy (kvp.Value))
+                .ToFrozenDictionary ();
 
             foreach (KeyValuePair<string, ConfigProperty> hardCodedProperty in _hardCodedConfigPropertyCache)
             {

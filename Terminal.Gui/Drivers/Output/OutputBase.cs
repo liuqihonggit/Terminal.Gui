@@ -116,7 +116,7 @@ public abstract class OutputBase
     public virtual void Write (IOutputBuffer buffer)
     {
         _clearLastOutputPending = true;
-        StringBuilder outputStringBuilder = new ();
+        Utf8Buffer outputBuffer = new ();
         var top = 0;
         var left = 0;
         int rows = buffer.Rows;
@@ -157,20 +157,20 @@ public abstract class OutputBase
                 return;
             }
 
-            if (!IsLegacyConsole && buffer is OutputBufferImpl outputBuffer)
+            if (!IsLegacyConsole && buffer is OutputBufferImpl outputBuffer2)
             {
-                outputBuffer.SyncAutoUrlsForRow (row);
+                outputBuffer2.SyncAutoUrlsForRow (row);
             }
 
             bool rowHadUrlsPreviously = _rowsWithUrls.Contains (row);
             bool rowHasUrlsNow = !IsLegacyConsole && RowContainsUrls (buffer, row, cols);
 
-            outputStringBuilder.Clear ();
+            outputBuffer.Clear ();
             _lastUrl = null; // Reset URL state at the start of each row
 
             if (!IsLegacyConsole && rowHadUrlsPreviously && !rowHasUrlsNow)
             {
-                outputStringBuilder.Append (EscSeqUtils.OSC_EndHyperlink ());
+                outputBuffer.AppendAscii (EscSeqUtils.OSC_EndHyperlink ());
             }
 
             // Process columns in row
@@ -194,10 +194,10 @@ public abstract class OutputBase
                             buffer.Contents [row, col].IsDirty = false;
                         }
 
-                        if (outputStringBuilder.Length > 0)
+                        if (outputBuffer.Length > 0)
                         {
-                            // This clears outputStringBuilder
-                            WriteToConsole (outputStringBuilder, ref lastCol, ref outputWidth);
+                            // This clears outputBuffer
+                            WriteToConsole (outputBuffer, ref lastCol, ref outputWidth);
                         }
                         else if (lastCol == -1)
                         {
@@ -229,13 +229,13 @@ public abstract class OutputBase
                             // If we were in a hyperlink, end it
                             if (_lastUrl is { })
                             {
-                                outputStringBuilder.Append (EscSeqUtils.OSC_EndHyperlink ());
+                                outputBuffer.AppendAscii (EscSeqUtils.OSC_EndHyperlink ());
                             }
 
                             // If starting a new hyperlink, begin it
                             if (!string.IsNullOrEmpty (cellUrl))
                             {
-                                outputStringBuilder.Append (EscSeqUtils.OSC_StartHyperlink (cellUrl));
+                                outputBuffer.Append (EscSeqUtils.OSC_StartHyperlink (cellUrl));
                             }
 
                             _lastUrl = cellUrl;
@@ -245,7 +245,7 @@ public abstract class OutputBase
                     // Append dirty cell as ANSI and mark clean
                     Cell cell = buffer.Contents [row, col];
                     buffer.Contents [row, col].IsDirty = false;
-                    AppendCellAnsi (cell, outputStringBuilder, ref redrawAttr, ref _redrawTextStyle, cols, ref col, ref outputWidth);
+                    AppendCellAnsi (cell, outputBuffer, ref redrawAttr, ref _redrawTextStyle, cols, ref col, ref outputWidth);
 
                     if (col != lastCol)
                     {
@@ -258,7 +258,7 @@ public abstract class OutputBase
 
             // Track row's URL status BEFORE the early-exit so _rowsWithUrls stays consistent
             // with the buffer state — even for rows whose cells were all flushed via WriteToConsole
-            // during the inner loop (leaving outputStringBuilder empty at this point).
+            // during the inner loop (leaving outputBuffer empty at this point).
             if (!IsLegacyConsole)
             {
                 if (rowHasUrlsNow)
@@ -275,16 +275,16 @@ public abstract class OutputBase
             // may still be open in the terminal because it was started in a prior batch flushed by
             // WriteToConsole and the row ended (or only clean cells followed) before any cell with
             // a different URL closed it. Emit the close so the link does not bleed into later rows.
-            if (outputStringBuilder.Length <= 0 && _lastUrl is null)
+            if (outputBuffer.Length <= 0 && _lastUrl is null)
             {
                 continue;
             }
 
             if (IsLegacyConsole)
             {
-                if (outputStringBuilder.Length > 0)
+                if (outputBuffer.Length > 0)
                 {
-                    Write (outputStringBuilder);
+                    Write (outputBuffer.AsSpan ());
                 }
 
                 continue;
@@ -292,13 +292,13 @@ public abstract class OutputBase
 
             if (_lastUrl is { })
             {
-                outputStringBuilder.Append (EscSeqUtils.OSC_EndHyperlink ());
+                outputBuffer.AppendAscii (EscSeqUtils.OSC_EndHyperlink ());
                 _lastUrl = null;
             }
 
             SetCursorPositionImpl (lastCol, row);
 
-            Write (outputStringBuilder);
+            Write (outputBuffer.AsSpan ());
         }
 
         if (IsLegacyConsole)
@@ -340,35 +340,40 @@ public abstract class OutputBase
     /// <param name="output"></param>
     /// <param name="attr"></param>
     /// <param name="redrawTextStyle"></param>
-    protected virtual void AppendOrWriteAttribute (StringBuilder output, Attribute attr, TextStyle redrawTextStyle)
+    protected virtual void AppendOrWriteAttribute (Utf8Buffer output, Attribute attr, TextStyle redrawTextStyle)
     {
         if (attr.Foreground == Color.None)
         {
-            EscSeqUtils.CSI_AppendResetForegroundColor (output);
+            output.AppendAscii ($"{EscSeqUtils.CSI}39m");
         }
         else if (Force16Colors)
         {
-            output.Append (EscSeqUtils.CSI_SetForegroundColor (attr.Foreground.GetAnsiColorCode ()));
+            output.AppendAscii (EscSeqUtils.CSI_SetForegroundColor (attr.Foreground.GetAnsiColorCode ()));
         }
         else
         {
-            EscSeqUtils.CSI_AppendForegroundColorRGB (output, attr.Foreground.R, attr.Foreground.G, attr.Foreground.B);
+            output.AppendAscii ($"{EscSeqUtils.CSI}38;2;{attr.Foreground.R};{attr.Foreground.G};{attr.Foreground.B}m");
         }
 
         if (attr.Background == Color.None)
         {
-            EscSeqUtils.CSI_AppendResetBackgroundColor (output);
+            output.AppendAscii ($"{EscSeqUtils.CSI}49m");
         }
         else if (Force16Colors)
         {
-            output.Append (EscSeqUtils.CSI_SetBackgroundColor (attr.Background.GetAnsiColorCode ()));
+            output.AppendAscii (EscSeqUtils.CSI_SetBackgroundColor (attr.Background.GetAnsiColorCode ()));
         }
         else
         {
-            EscSeqUtils.CSI_AppendBackgroundColorRGB (output, attr.Background.R, attr.Background.G, attr.Background.B);
+            output.AppendAscii ($"{EscSeqUtils.CSI}48;2;{attr.Background.R};{attr.Background.G};{attr.Background.B}m");
         }
 
-        EscSeqUtils.CSI_AppendTextStyleChange (output, redrawTextStyle, attr.Style);
+        string styleChange = EscSeqUtils.CSI_BuildTextStyleChange (redrawTextStyle, attr.Style);
+
+        if (styleChange.Length > 0)
+        {
+            output.AppendAscii (styleChange);
+        }
     }
 
     /// <summary>
@@ -396,6 +401,23 @@ public abstract class OutputBase
     }
 
     /// <summary>
+    ///     PERF: Output pre-encoded UTF-8 bytes directly to the console.
+    ///     Bypasses StringBuilder → string → byte[] conversion in the hot path.
+    /// </summary>
+    /// <param name="output">UTF-8 encoded bytes to write.</param>
+    protected virtual void Write (ReadOnlySpan<byte> output)
+    {
+        if (_clearLastOutputPending)
+        {
+            _lastOutputStringBuilder.Clear ();
+            _clearLastOutputPending = false;
+        }
+
+        // Decode back to UTF-16 for GetLastOutput() (test/debug only, not hot path)
+        _lastOutputStringBuilder.Append (Encoding.UTF8.GetString (output));
+    }
+
+    /// <summary>
     ///     Builds ANSI escape sequences for the specified rectangular region of the buffer.
     /// </summary>
     /// <param name="buffer">The output buffer to build ANSI for.</param>
@@ -420,6 +442,9 @@ public abstract class OutputBase
         var redrawTextStyle = TextStyle.None;
         string? lastUrl = null;
 
+        // Use Utf8Buffer for cell rendering, then decode to StringBuilder at the end
+        Utf8Buffer utf8Output = new ();
+
         for (int row = startRow; row < endRow; row++)
         {
             for (int col = startCol; col < endCol; col++)
@@ -436,12 +461,12 @@ public abstract class OutputBase
                 {
                     if (lastUrl is { })
                     {
-                        output.Append (EscSeqUtils.OSC_EndHyperlink ());
+                        utf8Output.AppendAscii (EscSeqUtils.OSC_EndHyperlink ());
                     }
 
                     if (!string.IsNullOrEmpty (cellUrl))
                     {
-                        output.Append (EscSeqUtils.OSC_StartHyperlink (cellUrl));
+                        utf8Output.Append (EscSeqUtils.OSC_StartHyperlink (cellUrl));
                     }
 
                     lastUrl = cellUrl;
@@ -449,13 +474,13 @@ public abstract class OutputBase
 
                 Cell cell = buffer.Contents! [row, col];
                 int outputWidth = -1;
-                AppendCellAnsi (cell, output, ref lastAttr, ref redrawTextStyle, endCol, ref col, ref outputWidth);
+                AppendCellAnsi (cell, utf8Output, ref lastAttr, ref redrawTextStyle, endCol, ref col, ref outputWidth);
             }
 
             // Close any open hyperlink at end of row
             if (lastUrl is { })
             {
-                output.Append (EscSeqUtils.OSC_EndHyperlink ());
+                utf8Output.AppendAscii (EscSeqUtils.OSC_EndHyperlink ());
                 lastUrl = null;
             }
 
@@ -466,9 +491,12 @@ public abstract class OutputBase
             // ONLCR tty discipline, so a '\n' row break still recreates the screen correctly.
             if (addNewlines)
             {
-                output.Append ('\n');
+                utf8Output.AppendByte ((byte)'\n');
             }
         }
+
+        // Decode Utf8Buffer back to StringBuilder for ToAnsi() callers
+        output.Append (Encoding.UTF8.GetString (utf8Output.AsSpan ()));
     }
 
     /// <summary>
@@ -482,7 +510,7 @@ public abstract class OutputBase
     /// <param name="currentCol">The current column, updated for wide characters.</param>
     /// <param name="outputWidth">The current output width, updated for wide characters.</param>
     protected void AppendCellAnsi (Cell cell,
-                                   StringBuilder output,
+                                   Utf8Buffer output,
                                    ref Attribute? lastAttr,
                                    ref TextStyle redrawTextStyle,
                                    int maxCol,
@@ -499,7 +527,7 @@ public abstract class OutputBase
             redrawTextStyle = attribute.Value.Style;
         }
 
-        // Add the grapheme
+        // Add the grapheme (Utf8Buffer.Append auto-detects ASCII vs Unicode)
         string grapheme = cell.Grapheme;
         output.Append (grapheme);
         outputWidth++;
@@ -598,6 +626,9 @@ public abstract class OutputBase
         var redrawTextStyle = TextStyle.None;
         string? lastUrl = null;
 
+        // Use Utf8Buffer for cell rendering, then decode to StringBuilder at the end
+        Utf8Buffer utf8Output = new ();
+
         for (int row = startRow; row < endRow; row++)
         {
             for (int col = startCol; col < endCol; col++)
@@ -606,14 +637,14 @@ public abstract class OutputBase
                 {
                     if (lastUrl is { })
                     {
-                        output.Append (EscSeqUtils.OSC_EndHyperlink ());
+                        utf8Output.AppendAscii (EscSeqUtils.OSC_EndHyperlink ());
                         lastUrl = null;
                     }
 
                     continue;
                 }
 
-                output.Append (EscSeqUtils.CSI_SetCursorPosition (row + 1, col + 1));
+                utf8Output.Append (EscSeqUtils.CSI_SetCursorPosition (row + 1, col + 1));
                 lastAttr = null;
                 redrawTextStyle = TextStyle.None;
 
@@ -632,12 +663,12 @@ public abstract class OutputBase
                     {
                         if (lastUrl is { })
                         {
-                            output.Append (EscSeqUtils.OSC_EndHyperlink ());
+                            utf8Output.AppendAscii (EscSeqUtils.OSC_EndHyperlink ());
                         }
 
                         if (!string.IsNullOrEmpty (cellUrl))
                         {
-                            output.Append (EscSeqUtils.OSC_StartHyperlink (cellUrl));
+                            utf8Output.Append (EscSeqUtils.OSC_StartHyperlink (cellUrl));
                         }
 
                         lastUrl = cellUrl;
@@ -645,16 +676,19 @@ public abstract class OutputBase
 
                     Cell cell = buffer.Contents! [row, col];
                     int outputWidth = -1;
-                    AppendCellAnsi (cell, output, ref lastAttr, ref redrawTextStyle, endCol, ref col, ref outputWidth);
+                    AppendCellAnsi (cell, utf8Output, ref lastAttr, ref redrawTextStyle, endCol, ref col, ref outputWidth);
                 }
             }
 
             if (lastUrl is { })
             {
-                output.Append (EscSeqUtils.OSC_EndHyperlink ());
+                utf8Output.AppendAscii (EscSeqUtils.OSC_EndHyperlink ());
                 lastUrl = null;
             }
         }
+
+        // Decode Utf8Buffer back to StringBuilder for ToAnsi() callers
+        output.Append (Encoding.UTF8.GetString (utf8Output.AsSpan ()));
     }
 
     private void ClearKittyRasterBlankCells (IOutputBuffer buffer)
@@ -1221,9 +1255,9 @@ public abstract class OutputBase
     ///     Writes buffered output to console, then clears the buffer and advances
     ///     <paramref name="lastCol"/> by <paramref name="outputWidth"/>.
     /// </summary>
-    private void WriteToConsole (StringBuilder output, ref int lastCol, ref int outputWidth)
+    private void WriteToConsole (Utf8Buffer output, ref int lastCol, ref int outputWidth)
     {
-        Write (output);
+        Write (output.AsSpan ());
 
         output.Clear ();
         lastCol += outputWidth;
