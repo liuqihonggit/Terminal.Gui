@@ -74,7 +74,7 @@ public abstract class OutputBase
     private int _lastTrackedCols;
     private int _lastTrackedUrlVersion;
 
-    private readonly StringBuilder _lastOutputStringBuilder = new ();
+    private readonly StringBuilder _lastoutputBuffer = new ();
     private bool _clearLastOutputPending;
 
     // Kitty image ids placed on the previous Write, keyed by RasterImageCommand.Id. A single image
@@ -173,92 +173,85 @@ public abstract class OutputBase
                 outputBuffer.AppendAscii (EscSeqUtils.OSC_EndHyperlink ());
             }
 
+            lastCol = 0;
+            var outputWidth = 0;
+
             // Process columns in row
             for (int col = left; col < cols; col++)
             {
-                lastCol = -1;
-                var outputWidth = 0;
+                // Skip clean cells, plus blank cells owned by raster images. Raster-owned
+                // blanks must not be emitted because normal text output would erase Sixel
+                // images and is unnecessary over Kitty's transparent-cleared placement.
+                bool skipRasterBlank = IsRasterCoveredBlankCell (buffer, row, col, rasterCellRectangles);
 
-                // Batch consecutive dirty cells
-                for (; col < cols; col++)
+                if (!buffer.Contents! [row, col].IsDirty || skipRasterBlank)
                 {
-                    // Skip clean cells, plus blank cells owned by raster images. Raster-owned
-                    // blanks must not be emitted because normal text output would erase Sixel
-                    // images and is unnecessary over Kitty's transparent-cleared placement.
-                    bool skipRasterBlank = IsRasterCoveredBlankCell (buffer, row, col, rasterCellRectangles);
-
-                    if (!buffer.Contents! [row, col].IsDirty || skipRasterBlank)
+                    if (skipRasterBlank)
                     {
-                        if (skipRasterBlank)
-                        {
-                            buffer.Contents [row, col].IsDirty = false;
-                        }
-
-                        if (outputBuffer.Length > 0)
-                        {
-                            // This clears outputBuffer
-                            WriteToConsole (outputBuffer, ref lastCol, ref outputWidth);
-                        }
-                        else if (lastCol == -1)
-                        {
-                            lastCol = col;
-                        }
-
-                        if (lastCol + 1 < cols)
-                        {
-                            lastCol++;
-                        }
-
-                        SetCursorPositionImpl (lastCol, row);
-
-                        continue;
-                    }
-
-                    if (lastCol == -1)
-                    {
-                        lastCol = col;
-                    }
-
-                    // Handle URL hyperlink state changes
-                    if (!IsLegacyConsole)
-                    {
-                        string? cellUrl = buffer.GetCellUrl (col, row);
-
-                        if (cellUrl != _lastUrl)
-                        {
-                            // If we were in a hyperlink, end it
-                            if (_lastUrl is { })
-                            {
-                                outputBuffer.AppendAscii (EscSeqUtils.OSC_EndHyperlink ());
-                            }
-
-                            // If starting a new hyperlink, begin it
-                            if (!string.IsNullOrEmpty (cellUrl))
-                            {
-                                outputBuffer.Append (EscSeqUtils.OSC_StartHyperlink (cellUrl));
-                            }
-
-                            _lastUrl = cellUrl;
-                        }
-                    }
-
-                    // Append dirty cell as ANSI and mark clean
-                    Cell cell = buffer.Contents [row, col];
-                    buffer.Contents [row, col].IsDirty = false;
-                    AppendCellAnsi (cell, outputBuffer, ref redrawAttr, ref _redrawTextStyle, cols, ref col, ref outputWidth);
-
-                    if (col != lastCol)
-                    {
-                        // Was a wide grapheme so mark clean next cell
-                        // See https://github.com/tui-cs/Terminal.Gui/issues/4466
                         buffer.Contents [row, col].IsDirty = false;
                     }
+
+                    if (outputWidth > 0)
+                    {
+                        // This clears outputBuffer
+                        WriteToConsole (outputBuffer, ref lastCol, ref outputWidth);
+                    }
+
+                    continue;
+                }
+
+                // Position the cursor once at the beginning of each dirty run. Clean gaps
+                // are skipped without emitting one cursor-position sequence per cell.
+                if (outputWidth == 0 && col != lastCol)
+                {
+                    if (!SetCursorPositionImpl (col, row))
+                    {
+                        return;
+                    }
+
+                    lastCol = col;
+                }
+
+                // Handle URL hyperlink state changes
+                if (!IsLegacyConsole)
+                {
+                    string? cellUrl = buffer.GetCellUrl (col, row);
+
+                    if (cellUrl != _lastUrl)
+                    {
+                        // If we were in a hyperlink, end it
+                        if (_lastUrl is { })
+                        {
+                            outputBuffer.Append (EscSeqUtils.OSC_EndHyperlink ());
+                        }
+
+                        // If starting a new hyperlink, begin it
+                        if (!string.IsNullOrEmpty (cellUrl))
+                        {
+                            outputBuffer.Append (EscSeqUtils.OSC_StartHyperlink (cellUrl));
+                        }
+
+                        _lastUrl = cellUrl;
+                    }
+                }
+
+                // Append dirty cell as ANSI and mark clean
+                int cellCol = col;
+                Cell cell = buffer.Contents [row, col];
+                buffer.Contents [row, col].IsDirty = false;
+                AppendCellAnsi (cell, outputBuffer, ref redrawAttr, ref _redrawTextStyle, cols, ref col, ref outputWidth);
+
+                if (col != cellCol)
+                {
+                    // Was a wide grapheme so mark clean next cell
+                    // See https://github.com/tui-cs/Terminal.Gui/issues/4466
+                    buffer.Contents [row, col].IsDirty = false;
                 }
             }
 
             // Track row's URL status BEFORE the early-exit so _rowsWithUrls stays consistent
             // with the buffer state — even for rows whose cells were all flushed via WriteToConsole
-            // during the inner loop (leaving outputBuffer empty at this point).
+            // during the row scan (leaving outputBuffer empty at this point).
             if (!IsLegacyConsole)
             {
                 if (rowHasUrlsNow)
@@ -270,6 +263,10 @@ public abstract class OutputBase
                     _rowsWithUrls.Remove (row);
                 }
             }
+
+            // Every dirty cell in this row has now been consumed. Drawing operations will
+            // set this flag again when they modify the row in a later frame.
+            buffer.DirtyLines [row] = false;
 
             // Flush buffered output for row. Even when nothing remains buffered, an OSC 8 hyperlink
             // may still be open in the terminal because it was started in a prior batch flushed by
@@ -296,8 +293,6 @@ public abstract class OutputBase
                 _lastUrl = null;
             }
 
-            SetCursorPositionImpl (lastCol, row);
-
             Write (outputBuffer.AsSpan ());
         }
 
@@ -323,7 +318,7 @@ public abstract class OutputBase
     }
 
     /// <inheritdoc cref="IOutput.GetLastOutput"/>
-    public virtual string GetLastOutput () => _lastOutputStringBuilder.ToString ();
+    public virtual string GetLastOutput () => _lastoutputBuffer.ToString ();
 
     /// <summary>
     ///     Changes the color and text style of the console to the given <paramref name="attr"/> and
@@ -393,11 +388,11 @@ public abstract class OutputBase
     {
         if (_clearLastOutputPending)
         {
-            _lastOutputStringBuilder.Clear ();
+            _lastoutputBuffer.Clear ();
             _clearLastOutputPending = false;
         }
 
-        _lastOutputStringBuilder.Append (output);
+        _lastoutputBuffer.Append (output);
     }
 
     /// <summary>
@@ -409,12 +404,12 @@ public abstract class OutputBase
     {
         if (_clearLastOutputPending)
         {
-            _lastOutputStringBuilder.Clear ();
+            _lastoutputBuffer.Clear ();
             _clearLastOutputPending = false;
         }
 
         // Decode back to UTF-16 for GetLastOutput() (test/debug only, not hot path)
-        _lastOutputStringBuilder.Append (Encoding.UTF8.GetString (output));
+        _lastoutputBuffer.Append (Encoding.UTF8.GetString (output));
     }
 
     /// <summary>
@@ -577,9 +572,9 @@ public abstract class OutputBase
             return output.ToString ();
         }
 
-        if (buffer is OutputBufferImpl outputBuffer)
+        if (buffer is OutputBufferImpl outputBuffer2)
         {
-            outputBuffer.SyncAutoUrlsForAllRows ();
+            outputBuffer2.SyncAutoUrlsForAllRows ();
         }
 
         StringBuilder ansiOutput = new ();
@@ -1279,7 +1274,7 @@ public abstract class OutputBase
 
     private void InvalidateRowsWithUrlsIfStale (IOutputBuffer buffer, int rows, int cols)
     {
-        int urlVersion = buffer is OutputBufferImpl outputBuffer ? outputBuffer.UrlStateVersion : 0;
+        int urlVersion = buffer is OutputBufferImpl outputBuffer2 ? outputBuffer2.UrlStateVersion : 0;
 
         if (!ReferenceEquals (_lastTrackedBuffer, buffer)
             || _lastTrackedRows != rows
