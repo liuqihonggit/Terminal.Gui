@@ -485,6 +485,34 @@ public class ConfigProperty
     private static ImmutableSortedDictionary<string, Type>? _classesWithConfigProps;
 
     /// <summary>
+    ///     External <see cref="ConfigurationPropertyAttribute"/> host types pre-registered by a consumer. When non-null,
+    ///     <see cref="Initialize"/> uses this set instead of scanning loaded assemblies via reflection.
+    /// </summary>
+    /// <remarks>Pass an empty collection to indicate the consumer defines no external hosts (scan is skipped).</remarks>
+    private static IEnumerable<Type>? _preRegisteredExternalHostTypes;
+
+    /// <summary>
+    ///     Pre-registers the set of external <see cref="ConfigurationPropertyAttribute"/> host types (defined outside
+    ///     Terminal.Gui) so <see cref="Initialize"/> skips the runtime assembly reflection scan. Pass an empty collection
+    ///     to indicate the consumer defines no external hosts.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         This is the AOT- and startup-friendly path: consumers that know their host set at build time (e.g. via a
+    ///         source generator) avoid the reflection scan entirely, eliminating startup cost.
+    ///     </para>
+    ///     <para>
+    ///         Must be called before <see cref="Initialize"/> runs (i.e. before <see cref="ConfigurationManager"/> is first
+    ///         used). Has no effect after <see cref="Initialize"/> has executed. Pass <see langword="null"/> to clear and
+    ///         restore the default scan behavior.
+    ///     </para>
+    /// </remarks>
+    public static void RegisterExternalConfigPropertyHostTypes (IEnumerable<Type>? externalHostTypes)
+    {
+        _preRegisteredExternalHostTypes = externalHostTypes;
+    }
+
+    /// <summary>
     ///     INTERNAL: Called from the <see cref="ModuleInitializers.InitializeConfigurationManager"/> method to initialize the
     ///     <see cref="_classesWithConfigProps"/> dictionary.
     /// </summary>
@@ -519,11 +547,21 @@ public class ConfigProperty
             dict [type.Name] = type;
         }
 
-        // PERF: Skip runtime assembly scan. ConfigPropertyHostTypes.GetTypes() statically
-        // enumerates all Terminal.Gui config property hosts. jcctui defines no external
-        // ConfigurationPropertyAttribute hosts, so scanning all loaded assemblies via
-        // reflection is pure waste — eliminates ~12% startup cost.
-        // ScanLoadedAssembliesForConfigPropertyHosts (dict, AppDomain.CurrentDomain.GetAssemblies ());
+        // External host types defined outside Terminal.Gui (test suites, plugins, embedding apps).
+        // A consumer may pre-register its known host set via RegisterExternalConfigPropertyHostTypes
+        // to skip the runtime reflection scan (AOT/startup-friendly). When no set has been registered,
+        // fall back to scanning all loaded assemblies.
+        if (_preRegisteredExternalHostTypes is { } preRegistered)
+        {
+            foreach (Type type in preRegistered)
+            {
+                dict [type.Name] = type;
+            }
+        }
+        else
+        {
+            ScanLoadedAssembliesForConfigPropertyHosts (dict, AppDomain.CurrentDomain.GetAssemblies ());
+        }
 
         _classesWithConfigProps = dict.ToImmutableSortedDictionary ();
     }

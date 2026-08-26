@@ -143,6 +143,12 @@ public sealed class Utf8Buffer
 
         int newSize = _buffer.Length;
 
+        // Guard against zero-length buffer: doubling zero stays zero (infinite loop).
+        if (newSize == 0)
+        {
+            newSize = 1;
+        }
+
         while (newSize < _length + additional)
         {
             newSize *= 2;
