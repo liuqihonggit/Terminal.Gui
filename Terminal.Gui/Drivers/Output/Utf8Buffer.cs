@@ -181,6 +181,9 @@ public sealed class Utf8Buffer
         // Guard against int overflow: if required size exceeds Array.MaxLength, throw instead of hanging.
         long required = (long)_length + additional;
 
+        // Guard against int overflow: if required size exceeds Array.MaxLength, throw instead of hanging.
+        long required = (long)_length + additional;
+
         if (required > Array.MaxLength)
         {
             throw new OutOfMemoryException ($"Utf8Buffer capacity {required} exceeds Array.MaxLength.");
@@ -188,6 +191,12 @@ public sealed class Utf8Buffer
 
         // Perform doubling in long to avoid int overflow, then cast back.
         long newSize = _buffer.Length;
+
+        // Guard against zero-length buffer: doubling zero stays zero (infinite loop).
+        if (newSize == 0)
+        {
+            newSize = 1;
+        }
 
         while (newSize < required)
         {

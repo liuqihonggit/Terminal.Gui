@@ -354,9 +354,10 @@ public class AnsiOutput : OutputBase, IOutput
                     break;
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // ignore for unit tests
+            // Swallowed for unit tests (degraded/no-terminal scenarios); traced for production diagnostics.
+            Trace.Lifecycle (nameof (AnsiOutput), "Write", $"Output write failed: {ex.Message}");
         }
     }
 
