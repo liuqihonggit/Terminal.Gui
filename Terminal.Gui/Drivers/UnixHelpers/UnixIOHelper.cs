@@ -305,7 +305,7 @@ internal static class UnixIOHelper
                 return false;
             }
 
-            return TryWriteAll (fd, buffer, write);
+            return TryWriteAll (fd, buffer, buffer.Length, write);
         }
         catch
         {
@@ -313,10 +313,37 @@ internal static class UnixIOHelper
         }
     }
 
-    internal static bool TryWriteAll (int fd, byte [] buffer, Func<int, byte [], int, int> writeFunc)
+    /// <summary>
+    ///     PERF: Writes <paramref name="count"/> bytes from <paramref name="buffer"/> to stdout.
+    ///     Enables callers to reuse a shared byte[] (zero allocation in stable state) instead of
+    ///     allocating via <c>ReadOnlySpan&lt;byte&gt;.ToArray()</c> on every write.
+    /// </summary>
+    /// <param name="buffer">Buffer containing data to write. Only the first <paramref name="count"/> bytes are written.</param>
+    /// <param name="count">Number of bytes to write.</param>
+    /// <returns>True if write was successful, false otherwise</returns>
+    public static bool TryWriteStdout (byte [] buffer, int count)
+    {
+        try
+        {
+            int fd = TerminalDevice.OutputFd;
+
+            if (fd < 0)
+            {
+                return false;
+            }
+
+            return TryWriteAll (fd, buffer, count, write);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    internal static bool TryWriteAll (int fd, byte [] buffer, int count, Func<int, byte [], int, int> writeFunc)
     {
         int offset = 0;
-        int remaining = buffer.Length;
+        int remaining = count;
 
         while (remaining > 0)
         {

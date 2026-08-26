@@ -278,8 +278,17 @@ public class AnsiOutput : OutputBase, IOutput
     {
         _lastBuffer = buffer;
         _batchMode = true;
-        base.Write (buffer);
-        _batchMode = false;
+
+        try
+        {
+            base.Write (buffer);
+        }
+        finally
+        {
+            // PERF: Ensure _batchMode is reset even if base.Write throws, so a subsequent
+            // Write call does not incorrectly defer cursor moves into stale batch state.
+            _batchMode = false;
+        }
 
         // Flush any remaining deferred cursor moves
         if (_pendingCursorMoves.Length > 0)
@@ -320,12 +329,12 @@ public class AnsiOutput : OutputBase, IOutput
                     if (_batchMode && _pendingCursorMoves.Length > 0)
                     {
                         _pendingCursorMoves.AppendBytes (output);
-                        UnixIOHelper.TryWriteStdout (_pendingCursorMoves.AsSpan ().ToArray ());
+                        WriteUnix (_pendingCursorMoves.AsSpan ());
                         _pendingCursorMoves.Clear ();
                     }
                     else
                     {
-                        UnixIOHelper.TryWriteStdout (output.ToArray ());
+                        WriteUnix (output);
                     }
 
                     return;
@@ -335,10 +344,32 @@ public class AnsiOutput : OutputBase, IOutput
                     break;
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // ignore for unit tests
+            // Swallowed for unit tests (degraded/no-terminal scenarios); traced for production diagnostics.
+            Trace.Lifecycle (nameof (AnsiOutput), "Write", $"Output write failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    ///     PERF: Writes a UTF-8 byte span to stdout via a reused backing buffer.
+    ///     Zero allocation in stable state (buffer grows as needed), matching the Windows VT path.
+    /// </summary>
+    private void WriteUnix (ReadOnlySpan<byte> span)
+    {
+        if (span.IsEmpty)
+        {
+            return;
+        }
+
+        // Ensure reusable buffer is large enough
+        if (_unixByteBuffer is null || _unixByteBuffer.Length < span.Length)
+        {
+            _unixByteBuffer = new byte [span.Length];
+        }
+
+        span.CopyTo (_unixByteBuffer);
+        UnixIOHelper.TryWriteStdout (_unixByteBuffer, span.Length);
     }
 
     private Cursor _currentCursor;
@@ -346,6 +377,10 @@ public class AnsiOutput : OutputBase, IOutput
     // PERF: Batch mode — defer cursor-move sequences to merge with cell content, reducing WriteFile P/Invoke count
     private readonly Utf8Buffer _pendingCursorMoves = new ();
     private bool _batchMode;
+
+    // PERF: Reusable byte[] for Unix raw output — avoids per-write .ToArray() allocation.
+    // Grows as needed; stable-state zero-allocation writes (mirrors WindowsVTOutputHelper._byteBuffer).
+    private byte []? _unixByteBuffer;
 
     /// <inheritdoc/>
     public Cursor GetCursor () => _currentCursor;
