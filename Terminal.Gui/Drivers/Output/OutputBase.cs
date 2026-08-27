@@ -74,8 +74,11 @@ public abstract class OutputBase
     private int _lastTrackedCols;
     private int _lastTrackedUrlVersion;
 
-    private readonly StringBuilder _lastoutputBuffer = new ();
+    private readonly StringBuilder _lastOutputStringBuilder = new ();
     private bool _clearLastOutputPending;
+
+    // Reusable buffer for UTF-8 → UTF-16 decode in Write(ReadOnlySpan<byte>).
+    private char []? _utf16DecodeBuffer;
 
     // Kitty image ids placed on the previous Write, keyed by RasterImageCommand.Id. A single image
     // can occupy more than one placement when its visible region is fragmented by clipping (e.g. a
@@ -318,7 +321,7 @@ public abstract class OutputBase
     }
 
     /// <inheritdoc cref="IOutput.GetLastOutput"/>
-    public virtual string GetLastOutput () => _lastoutputBuffer.ToString ();
+    public virtual string GetLastOutput () => _lastOutputStringBuilder.ToString ();
 
     /// <summary>
     ///     Changes the color and text style of the console to the given <paramref name="attr"/> and
@@ -339,7 +342,8 @@ public abstract class OutputBase
     {
         if (attr.Foreground == Color.None)
         {
-            output.AppendAscii ($"{EscSeqUtils.CSI}39m");
+            output.AppendAscii (EscSeqUtils.CSI);
+            output.AppendAscii ("39m");
         }
         else if (Force16Colors)
         {
@@ -347,12 +351,20 @@ public abstract class OutputBase
         }
         else
         {
-            output.AppendAscii ($"{EscSeqUtils.CSI}38;2;{attr.Foreground.R};{attr.Foreground.G};{attr.Foreground.B}m");
+            output.AppendAscii (EscSeqUtils.CSI);
+            output.AppendAscii ("38;2;");
+            output.AppendInt (attr.Foreground.R);
+            output.AppendByte ((byte)';');
+            output.AppendInt (attr.Foreground.G);
+            output.AppendByte ((byte)';');
+            output.AppendInt (attr.Foreground.B);
+            output.AppendByte ((byte)'m');
         }
 
         if (attr.Background == Color.None)
         {
-            output.AppendAscii ($"{EscSeqUtils.CSI}49m");
+            output.AppendAscii (EscSeqUtils.CSI);
+            output.AppendAscii ("49m");
         }
         else if (Force16Colors)
         {
@@ -360,7 +372,14 @@ public abstract class OutputBase
         }
         else
         {
-            output.AppendAscii ($"{EscSeqUtils.CSI}48;2;{attr.Background.R};{attr.Background.G};{attr.Background.B}m");
+            output.AppendAscii (EscSeqUtils.CSI);
+            output.AppendAscii ("48;2;");
+            output.AppendInt (attr.Background.R);
+            output.AppendByte ((byte)';');
+            output.AppendInt (attr.Background.G);
+            output.AppendByte ((byte)';');
+            output.AppendInt (attr.Background.B);
+            output.AppendByte ((byte)'m');
         }
 
         string styleChange = EscSeqUtils.CSI_BuildTextStyleChange (redrawTextStyle, attr.Style);
@@ -388,11 +407,11 @@ public abstract class OutputBase
     {
         if (_clearLastOutputPending)
         {
-            _lastoutputBuffer.Clear ();
+            _lastOutputStringBuilder.Clear ();
             _clearLastOutputPending = false;
         }
 
-        _lastoutputBuffer.Append (output);
+        _lastOutputStringBuilder.Append (output);
     }
 
     /// <summary>
@@ -404,12 +423,21 @@ public abstract class OutputBase
     {
         if (_clearLastOutputPending)
         {
-            _lastoutputBuffer.Clear ();
+            _lastOutputStringBuilder.Clear ();
             _clearLastOutputPending = false;
         }
 
-        // Decode back to UTF-16 for GetLastOutput() (test/debug only, not hot path)
-        _lastoutputBuffer.Append (Encoding.UTF8.GetString (output));
+        // Decode UTF-8 to UTF-16 for GetLastOutput() using a reusable buffer.
+        // Allocates only when the buffer must grow; stable-state zero-allocation.
+        int maxCharCount = Encoding.UTF8.GetMaxCharCount (output.Length);
+
+        if (_utf16DecodeBuffer is null || _utf16DecodeBuffer.Length < maxCharCount)
+        {
+            _utf16DecodeBuffer = new char [maxCharCount];
+        }
+
+        int charCount = Encoding.UTF8.GetChars (output, _utf16DecodeBuffer);
+        _lastOutputStringBuilder.Append (_utf16DecodeBuffer, 0, charCount);
     }
 
     /// <summary>

@@ -72,11 +72,10 @@ public sealed class Utf8Buffer
         if (allAscii)
         {
             AppendAscii (text);
+            return;
         }
-        else
-        {
-            Append (text.AsSpan ());
-        }
+
+        Append (text.AsSpan ());
     }
 
     /// <summary>
@@ -102,6 +101,44 @@ public sealed class Utf8Buffer
     {
         EnsureCapacity (1);
         _buffer [_length++] = b;
+    }
+
+    /// <summary>
+    ///     Appends an integer as ASCII digits directly (no string allocation).
+    /// </summary>
+    public void AppendInt (int value)
+    {
+        if (value == 0)
+        {
+            AppendByte ((byte)'0');
+            return;
+        }
+
+        if (value < 0)
+        {
+            AppendByte ((byte)'-');
+            value = -value;
+        }
+
+        int temp = value;
+        int digitCount = 0;
+
+        while (temp > 0)
+        {
+            digitCount++;
+            temp /= 10;
+        }
+
+        EnsureCapacity (digitCount);
+        int start = _length + digitCount;
+
+        while (value > 0)
+        {
+            _buffer [--start] = (byte)('0' + value % 10);
+            value /= 10;
+        }
+
+        _length += digitCount;
     }
 
     /// <summary>

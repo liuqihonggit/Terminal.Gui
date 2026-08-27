@@ -90,6 +90,9 @@ internal partial class WindowsOutput : OutputBase, IOutput
     private readonly ConsoleColor _foreground;
     private readonly ConsoleColor _background;
 
+    // Reusable buffer for UTF-8 → UTF-16 decode in Write(ReadOnlySpan<byte>).
+    private char []? _utf16DecodeBuffer;
+
     public WindowsOutput ()
     {
         //Logging.Information ($"Creating {nameof (WindowsOutput)}");
@@ -460,6 +463,39 @@ internal partial class WindowsOutput : OutputBase, IOutput
                     throw;
                 }
             }
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override void Write (ReadOnlySpan<byte> output)
+    {
+        base.Write (output);
+
+        if (!IsAttachedToTerminal || output.IsEmpty)
+        {
+            return;
+        }
+
+        if (!OperatingSystem.IsWindows ())
+        {
+            return;
+        }
+
+        // Decode UTF-8 to UTF-16 using a reusable buffer, then write via WriteConsole.
+        int maxCharCount = Encoding.UTF8.GetMaxCharCount (output.Length);
+
+        if (_utf16DecodeBuffer is null || _utf16DecodeBuffer.Length < maxCharCount)
+        {
+            _utf16DecodeBuffer = new char [maxCharCount];
+        }
+
+        int charCount = Encoding.UTF8.GetChars (output, _utf16DecodeBuffer);
+        ReadOnlySpan<char> charSpan = _utf16DecodeBuffer.AsSpan (0, charCount);
+        nint handle = !IsLegacyConsole ? _outputHandle : _screenBuffer;
+
+        if (!WriteConsole (handle, charSpan, (uint)charCount, out _, nint.Zero))
+        {
+            // Don't throw in unit tests
         }
     }
 

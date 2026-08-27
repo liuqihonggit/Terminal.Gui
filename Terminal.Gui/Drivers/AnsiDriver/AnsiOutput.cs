@@ -296,8 +296,6 @@ public class AnsiOutput : OutputBase, IOutput
     /// </summary>
     protected override void Write (ReadOnlySpan<byte> output)
     {
-        base.Write (output);
-
         try
         {
             switch (_platform)
@@ -306,11 +304,13 @@ public class AnsiOutput : OutputBase, IOutput
                     if (_batchMode && _pendingCursorMoves.Length > 0)
                     {
                         _pendingCursorMoves.AppendBytes (output);
+                        base.Write (_pendingCursorMoves.AsSpan ());
                         _windowsVTOutput!.Write (_pendingCursorMoves.AsSpan ());
                         _pendingCursorMoves.Clear ();
                     }
                     else
                     {
+                        base.Write (output);
                         _windowsVTOutput!.Write (output);
                     }
 
@@ -320,18 +320,21 @@ public class AnsiOutput : OutputBase, IOutput
                     if (_batchMode && _pendingCursorMoves.Length > 0)
                     {
                         _pendingCursorMoves.AppendBytes (output);
-                        UnixIOHelper.TryWriteStdout (_pendingCursorMoves.AsSpan ().ToArray ());
+                        base.Write (_pendingCursorMoves.AsSpan ());
+                        WriteUnix (_pendingCursorMoves.AsSpan ());
                         _pendingCursorMoves.Clear ();
                     }
                     else
                     {
-                        UnixIOHelper.TryWriteStdout (output.ToArray ());
+                        base.Write (output);
+                        WriteUnix (output);
                     }
 
                     return;
 
                 case AnsiPlatform.Degraded:
                 default:
+                    base.Write (output);
                     break;
             }
         }
@@ -343,9 +346,34 @@ public class AnsiOutput : OutputBase, IOutput
 
     private Cursor _currentCursor;
 
+    /// <summary>
+    ///     Copies <paramref name="output"/> into a reusable backing array and writes to stdout,
+    ///     avoiding <see cref="ReadOnlySpan{T}.ToArray"/> allocation on every call.
+    /// </summary>
+    private void WriteUnix (ReadOnlySpan<byte> output)
+    {
+        int len = output.Length;
+
+        if (len == 0)
+        {
+            return;
+        }
+
+        if (_unixWriteBuffer is null || _unixWriteBuffer.Length < len)
+        {
+            _unixWriteBuffer = new byte [len];
+        }
+
+        output.CopyTo (_unixWriteBuffer);
+        UnixIOHelper.TryWriteStdout (_unixWriteBuffer, len);
+    }
+
     // PERF: Batch mode — defer cursor-move sequences to merge with cell content, reducing WriteFile P/Invoke count
     private readonly Utf8Buffer _pendingCursorMoves = new ();
     private bool _batchMode;
+
+    // PERF: Reusable backing array for Unix writes — avoids ToArray() allocation on every Write call.
+    private byte []? _unixWriteBuffer;
 
     /// <inheritdoc/>
     public Cursor GetCursor () => _currentCursor;

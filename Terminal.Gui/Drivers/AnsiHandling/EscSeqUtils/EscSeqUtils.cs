@@ -816,6 +816,35 @@ public static class EscSeqUtils
             return;
         }
 
+        List<int> sgr = ComputeTextStyleSgrCodes (prev, next);
+
+        output.Append ("\x1b[");
+        output.Append (string.Join (';', sgr));
+        output.Append ('m');
+    }
+
+    /// <summary>
+    ///     Builds the SGR escape sequence for a text style change as a string (ASCII).
+    ///     Used by Utf8Buffer-based output path.
+    /// </summary>
+    internal static string CSI_BuildTextStyleChange (TextStyle prev, TextStyle next)
+    {
+        if (prev == next)
+        {
+            return string.Empty;
+        }
+
+        List<int> sgr = ComputeTextStyleSgrCodes (prev, next);
+
+        return $"\x1b[{string.Join (';', sgr)}m";
+    }
+
+    /// <summary>
+    ///     Computes the SGR parameter codes for a text style change.
+    ///     Shared by <see cref="CSI_AppendTextStyleChange"/> and <see cref="CSI_BuildTextStyleChange"/>.
+    /// </summary>
+    private static List<int> ComputeTextStyleSgrCodes (TextStyle prev, TextStyle next)
+    {
         // Bitwise operations to determine flag changes. A ^ B are the flags different between two flag sets. These different flags that exist in the next flag
         // set (diff & next) are the ones that were enabled in the switch, those that exist in the previous flag set (diff & prev) are the ones that were
         // disabled.
@@ -915,115 +944,7 @@ public static class EscSeqUtils
             }
         }
 
-        output.Append ("\x1b[");
-        output.Append (string.Join (';', sgr));
-        output.Append ('m');
-    }
-
-    /// <summary>
-    ///     Builds the SGR escape sequence for a text style change as a string (ASCII).
-    ///     Used by Utf8Buffer-based output path.
-    /// </summary>
-    internal static string CSI_BuildTextStyleChange (TextStyle prev, TextStyle next)
-    {
-        if (prev == next)
-        {
-            return string.Empty;
-        }
-
-        TextStyle diff = prev ^ next;
-        TextStyle enabled = diff & next;
-        TextStyle disabled = diff & prev;
-
-        List<int> sgr = new ();
-
-        if (disabled != TextStyle.None)
-        {
-            if (disabled.HasFlag (TextStyle.Bold))
-            {
-                sgr.Add (22);
-
-                if ((prev & next).HasFlag (TextStyle.Faint))
-                {
-                    sgr.Add (2);
-                }
-            }
-
-            if (disabled.HasFlag (TextStyle.Faint))
-            {
-                sgr.Add (22);
-
-                if ((prev & next).HasFlag (TextStyle.Bold))
-                {
-                    sgr.Add (1);
-                }
-            }
-
-            if (disabled.HasFlag (TextStyle.Italic))
-            {
-                sgr.Add (23);
-            }
-
-            if (disabled.HasFlag (TextStyle.Underline))
-            {
-                sgr.Add (24);
-            }
-
-            if (disabled.HasFlag (TextStyle.Blink))
-            {
-                sgr.Add (25);
-            }
-
-            if (disabled.HasFlag (TextStyle.Reverse))
-            {
-                sgr.Add (27);
-            }
-
-            if (disabled.HasFlag (TextStyle.Strikethrough))
-            {
-                sgr.Add (29);
-            }
-        }
-
-        if (enabled != TextStyle.None)
-        {
-            if (enabled.HasFlag (TextStyle.Bold))
-            {
-                sgr.Add (1);
-            }
-
-            if (enabled.HasFlag (TextStyle.Faint))
-            {
-                sgr.Add (2);
-            }
-
-            if (enabled.HasFlag (TextStyle.Italic))
-            {
-                sgr.Add (3);
-            }
-
-            if (enabled.HasFlag (TextStyle.Underline))
-            {
-                sgr.Add (4);
-            }
-
-            if (enabled.HasFlag (TextStyle.Blink))
-            {
-                sgr.Add (5);
-            }
-
-            if (enabled.HasFlag (TextStyle.Reverse))
-            {
-                sgr.Add (7);
-            }
-
-            if (enabled.HasFlag (TextStyle.Strikethrough))
-            {
-                sgr.Add (9);
-            }
-        }
-
-        return $"\x1b[{string.Join (';', sgr)}m";
+        return sgr;
     }
 
     #endregion Text Styles
