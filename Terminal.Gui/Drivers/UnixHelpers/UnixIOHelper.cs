@@ -331,6 +331,12 @@ internal static class UnixIOHelper
                 return false;
             }
 
+            // Guard against out-of-range count to prevent native read beyond buffer bounds.
+            if (count < 0 || count > buffer.Length)
+            {
+                return false;
+            }
+
             return TryWriteAll (fd, buffer, count, write);
         }
         catch

@@ -178,13 +178,27 @@ public sealed class Utf8Buffer
             return;
         }
 
-        int newSize = _buffer.Length;
+        // Guard against int overflow: if required size exceeds Array.MaxLength, throw instead of hanging.
+        long required = (long)_length + additional;
 
-        while (newSize < _length + additional)
+        if (required > Array.MaxLength)
+        {
+            throw new OutOfMemoryException ($"Utf8Buffer capacity {required} exceeds Array.MaxLength.");
+        }
+
+        // Perform doubling in long to avoid int overflow, then cast back.
+        long newSize = _buffer.Length;
+
+        while (newSize < required)
         {
             newSize *= 2;
         }
 
-        Array.Resize (ref _buffer, newSize);
+        if (newSize > Array.MaxLength)
+        {
+            newSize = Array.MaxLength;
+        }
+
+        Array.Resize (ref _buffer, (int)newSize);
     }
 }

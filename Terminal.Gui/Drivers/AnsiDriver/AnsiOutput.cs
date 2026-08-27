@@ -212,6 +212,15 @@ public class AnsiOutput : OutputBase, IOutput
     /// <inheritdoc/>
     protected override void Write (StringBuilder output)
     {
+        // In batch mode, route through the byte-span path to merge with deferred cursor moves.
+        if (_batchMode && _pendingCursorMoves.Length > 0)
+        {
+            byte [] utf8 = Encoding.UTF8.GetBytes (output.ToString ());
+            Write (utf8);
+
+            return;
+        }
+
         base.Write (output);
 
         try
@@ -278,14 +287,21 @@ public class AnsiOutput : OutputBase, IOutput
     {
         _lastBuffer = buffer;
         _batchMode = true;
-        base.Write (buffer);
-        _batchMode = false;
 
-        // Flush any remaining deferred cursor moves
-        if (_pendingCursorMoves.Length > 0)
+        try
         {
-            Write (_pendingCursorMoves.AsSpan ());
-            _pendingCursorMoves.Clear ();
+            base.Write (buffer);
+        }
+        finally
+        {
+            _batchMode = false;
+
+            // Flush any remaining deferred cursor moves
+            if (_pendingCursorMoves.Length > 0)
+            {
+                Write (_pendingCursorMoves.AsSpan ());
+                _pendingCursorMoves.Clear ();
+            }
         }
     }
 
