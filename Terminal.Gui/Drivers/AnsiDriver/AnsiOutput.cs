@@ -356,8 +356,8 @@ public class AnsiOutput : OutputBase, IOutput
         }
         catch (Exception ex)
         {
-            // Swallowed for unit tests (degraded/no-terminal scenarios); traced for production diagnostics.
-            Trace.Lifecycle (nameof (AnsiOutput), "Write", $"Output write failed: {ex.Message}");
+            // Swallowed for unit tests (degraded/no-terminal scenarios); logged for production diagnostics.
+            Logging.Error ($"Output write failed in {nameof (AnsiOutput)}: {ex.Message}");
         }
     }
 
